@@ -1,23 +1,258 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Block Puzzle Game</title>
-    <link rel="stylesheet" href="styles.css">
+    <title>Freeze Number Rhythm</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        * {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            touch-action: none;
+            font-family: Arial, sans-serif;
+        }
+        #gameArea {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        .number-block {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            border: 3px solid;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: bold;
+            transition: transform 0.2s;
+        }
+        .frozen {
+            background: rgba(255, 255, 255, 0.1) !important;
+            border-style: dashed;
+        }
+        #controls {
+            position: fixed;
+            bottom: 20px;
+            width: 100%;
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+            padding: 0 20px;
+            box-sizing: border-box;
+        }
+        .num-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid #00ffff;
+            border-radius: 10px;
+            color: white;
+            font-size: 24px;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.1s;
+        }
+        .num-btn:active {
+            background: #00ffff;
+            transform: scale(0.9);
+        }
+        #hud {
+            position: fixed;
+            top: 20px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 20px;
+            box-sizing: border-box;
+            color: white;
+            font-size: 24px;
+        }
+        #warning {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: red;
+            font-size: 48px;
+            display: none;
+        }
+    </style>
 </head>
 <body>
-    <div class="game-container">
-        <div class="grid"></div>
-        <div class="blocks">
-            <div class="block" data-shape="L"></div>
-            <div class="block" data-shape="I"></div>
-            <div class="block" data-shape="O"></div>
-            <div class="block" data-shape="T"></div>
-        </div>
-        <div class="score">Score: <span id="score">0</span></div>
-        <button id="reset">Reset Game</button>
+    <div id="hud">
+        <div>Combo: <span id="combo">1x</span></div>
+        <div>Score: <span id="score">0</span></div>
     </div>
-    <script src="script.js"></script>
+    <div id="warning">TOO HIGH!</div>
+    <div id="gameArea"></div>
+    <div id="controls">
+        <div class="num-btn">1</div>
+        <div class="num-btn">2</div>
+        <div class="num-btn">3</div>
+        <div class="num-btn">4</div>
+        <div class="num-btn">5</div>
+    </div>
+
+<script>
+const gameArea = document.getElementById('gameArea');
+const numberTypes = {
+    even: { color: '#ff00ff', check: n => n % 2 === 0 },
+    odd: { color: '#00ffff', check: n => n % 2 !== 0 },
+    triple: { color: '#ff9900', check: n => n % 3 === 0 },
+    prime: { color: '#00ff00', check: n => [2,3,5,7].includes(n) } // Fixed prime check
+};
+
+let activeNumber = null;
+let combo = 1;
+let score = 0;
+let baseSpeed = 1.5;
+let waveCount = 1;
+let frozenNumbers = [];
+const MAX_HEIGHT = window.innerHeight * 0.7;
+let gameStartTime = Date.now();
+
+class NumberBlock {
+    constructor() {
+        this.element = document.createElement('div');
+        this.element.className = 'number-block';
+        this.number = Math.floor(Math.random() * 5) + 1;
+        this.type = Object.keys(numberTypes)[Math.floor(Math.random()*4)];
+        
+        // Ensure 2 appears in prime numbers
+        if(this.type === 'prime' && this.number === 2) {
+            this.number = 2; // Force 2 to appear
+        }
+        
+        this.element.textContent = this.number;
+        this.element.style.color = numberTypes[this.type].color;
+        this.element.style.borderColor = numberTypes[this.type].color;
+        this.element.style.left = `${10 + Math.random() * 80}%`;
+        this.element.style.top = '-100px';
+        gameArea.appendChild(this.element);
+        this.y = -100;
+        this.isFrozen = false;
+    }
+
+    update() {
+        if(this.isFrozen) return true;
+        
+        // Dynamic speed based on time and score
+        const currentSpeed = baseSpeed + (Date.now() - gameStartTime)/20000 + score/500;
+        this.y += currentSpeed;
+        this.element.style.top = `${this.y}px`;
+        
+        if(this.y > window.innerHeight - 100) {
+            this.freeze();
+            return false;
+        }
+        return true;
+    }
+
+    freeze() {
+        this.isFrozen = true;
+        this.element.classList.add('frozen');
+        frozenNumbers.push(this);
+        this.updateStackPosition();
+        checkGameOver();
+    }
+
+    updateStackPosition() {
+        const index = frozenNumbers.indexOf(this);
+        const row = Math.floor(index / 5);
+        const col = index % 5;
+        this.element.style.left = `${10 + col * 15}%`;
+        this.element.style.top = `${window.innerHeight - 80 - (row * 70)}px`;
+    }
+}
+
+let activeBlocks = [];
+
+function spawnBlock() {
+    activeBlocks.push(new NumberBlock());
+    const spawnDelay = Math.max(1500, 3500 - (score * 2));
+    setTimeout(spawnBlock, spawnDelay);
+}
+
+function checkMatches(number) {
+    // Check falling blocks
+    activeBlocks = activeBlocks.filter(block => {
+        const isValid = numberTypes[block.type].check(number);
+        if(isValid) {
+            block.element.remove();
+            score += 10 * combo;
+            combo = Math.min(5, combo + 0.2);
+            return false;
+        }
+        return true;
+    });
+
+    // Check frozen blocks
+    frozenNumbers = frozenNumbers.filter(block => {
+        if(block.number === number) {
+            block.element.remove();
+            score += 5 * combo;
+            return false;
+        }
+        return true;
+    });
+
+    // Update positions
+    frozenNumbers.forEach((block, index) => {
+        block.updateStackPosition();
+    });
+
+    updateHUD();
+}
+
+function checkGameOver() {
+    const bottomRow = frozenNumbers.slice(-5);
+    if(bottomRow.length === 5) {
+        const lowestY = bottomRow.reduce((min, block) => 
+            Math.min(min, parseFloat(block.element.style.top)), Infinity);
+        
+        if(window.innerHeight - lowestY > MAX_HEIGHT) {
+            document.getElementById('warning').style.display = 'block';
+            setTimeout(() => gameOver(), 1000);
+        }
+    }
+}
+
+function updateHUD() {
+    document.getElementById('score').textContent = Math.floor(score);
+    document.getElementById('combo').textContent = combo.toFixed(1) + 'x';
+}
+
+function gameOver() {
+    alert(`Game Over! Final Score: ${Math.floor(score)}`);
+    window.location.reload();
+}
+
+// Input handling
+document.querySelectorAll('.num-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const number = parseInt(btn.textContent);
+        checkMatches(number);
+        combo = Math.max(1, combo - 0.1);
+    });
+});
+
+// Game loop
+function gameLoop() {
+    activeBlocks = activeBlocks.filter(block => block.update());
+    requestAnimationFrame(gameLoop);
+}
+
+// Start game
+spawnBlock();
+gameLoop();
+</script>
 </body>
 </html>
